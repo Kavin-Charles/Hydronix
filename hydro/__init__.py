@@ -18,6 +18,7 @@ benchmarks    : Analytical and reference-hull test cases (box barge, Wigley)
 report        : PDF report generation (reportlab)
 plots         : High-quality matplotlib figures for the report
 plots3d       : Interactive Plotly 3-D hull visualisation
+seakeeping    : Nonlinear time-domain roll ODE (capsize simulator)
 """
 
 from .hull          import Hull
@@ -28,8 +29,9 @@ from .imo           import imo_intact_stability_check
 from .trim          import solve_equilibrium
 from .bonjean       import bonjean_curves
 from .free_surface  import fsm_rectangular_tank, gm_corrected
+from .seakeeping    import simulate_roll, RollSimResult
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "Hull",
@@ -40,4 +42,5 @@ __all__ = [
     "solve_equilibrium",
     "bonjean_curves",
     "fsm_rectangular_tank", "gm_corrected",
+    "simulate_roll", "RollSimResult",
 ]
