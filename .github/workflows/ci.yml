@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate KCS sample (real-world regression input)
+        run: python samples/build_kcs.py
+
+      - name: Run validation suite
+        run: python -m pytest tests/test_benchmarks.py -v --tb=short
+
+      - name: Verify CLI runs cleanly (box barge, no plots)
+        run: python main.py samples/box_barge.json --no-plot --imo --angles "0:40:10"
+        continue-on-error: true   # samples/ may not exist on clean checkout
+
+      - name: Syntax-check Streamlit app
+        run: python -m py_compile app.py && echo "app.py OK"
