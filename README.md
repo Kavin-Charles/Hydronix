@@ -37,6 +37,7 @@ commercial naval-architecture software (NAPA, GHS, Maxsurf).
 | Interactive 3-D hull (Plotly) | ✨ Extra | `hydro.plots3d` |
 | Multi-page PDF report | ✨ Extra | `hydro.report` |
 | **Streamlit web UI** | ✨ Extra | `app.py` |
+| **⚡ Capsize Simulator (time-domain roll ODE)** | 🔥 Showstopper | `hydro.seakeeping` |
 
 ---
 
@@ -348,7 +349,45 @@ python main.py samples/kcs_real.json --imo --angles "0:60:5"
 
 ---
 
-## 9. Credits
+## 9. Capsize Simulator — nonlinear time-domain roll dynamics ⚡
+
+The solver's GZ curve is a *static* stability measure. The **Capsize
+Simulator** (`hydro.seakeeping`) plugs that curve straight into a
+rigid-body roll-equation of motion and solves for heel angle vs time:
+
+```
+I_xx · φ̈  +  b · φ̇  +  Δ·g · GZ(φ)  =  M_wave(t)
+```
+
+- `I_xx = Δ · k_xx²`,  `k_xx = C_roll · B`  (Tupper §5.3; C_roll ≈ 0.35)
+- `b = 2·ζ·ωₙ·I_xx`,  `ωₙ = √(g·GM)/k_xx`
+- `GZ(φ)` is the exact polygon-clip curve, odd-extended for negative heel;
+  past AVS it ramps to a capsizing torque over 30°
+- three excitation modes:  **calm** (free decay) · **beam** (sinusoidal) ·
+  **rogue** (Gaussian pulse)
+- scipy `solve_ivp` RK45 with adaptive step and event detection
+- capsize event: `|φ|` crosses AVS (non-terminal); termination at ±180°
+
+The Streamlit **⚡ Capsize Sim** tab runs the ODE and renders
+`φ(t)`, phase portrait, wave-moment trace, and an **animated 3-D view
+of the hull rolling in the earth frame** with Play / Pause / slider
+controls. It is a miniature seakeeping code — the time-domain
+counterpart of a linear roll RAO at large amplitude.
+
+```python
+from hydro.seakeeping import simulate_roll
+r = simulate_roll(
+    gz_angles_deg=ang, gz_values_m=gz,
+    displacement_t=Δ, B_m=B, GM_m=GM,
+    phi0_deg=25, duration_s=90, mode="beam",
+    wave_amp_Nm=80e6, wave_period_s=10,
+)
+print(r.capsized, r.max_heel_deg, r.capsize_time_s)
+```
+
+---
+
+## 10. Credits
 
 Built for the HydroHackathon 2026 challenge. All formulae cross-checked
 against:
@@ -358,3 +397,4 @@ against:
 - Barrass, *Ship Design and Performance for Masters and Mates*
 - IMO Resolution **MSC.267(85)** – 2008 Intact Stability Code
 - IMO Resolution **A.749(18)** – Severe-Wind-and-Rolling Criterion
+- Lloyd, *Seakeeping: Ship Behaviour in Rough Weather* (rev. 1998)

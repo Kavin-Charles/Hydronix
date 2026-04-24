@@ -198,9 +198,10 @@ with st.spinner("Computing heeled GZ curve (polygon-clipping solver) …"):
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_over, tab_hyd, tab_gz, tab_imo, tab_curves, tab_3d, tab_extra, tab_export = st.tabs(
+(tab_over, tab_hyd, tab_gz, tab_imo, tab_curves, tab_3d,
+ tab_capsize, tab_extra, tab_export) = st.tabs(
     ["Overview", "Hydrostatics", "GZ / KN", "IMO A.749", "Curves of Form",
-     "3-D Hull", "Trim / FS / Weather", "Export"]
+     "3-D Hull", "⚡ Capsize Sim", "Trim / FS / Weather", "Export"]
 )
 
 
@@ -388,6 +389,198 @@ with tab_3d:
         st.plotly_chart(fig3d, use_container_width=True)
     except Exception as ex:
         st.error(f"3-D plot failed: {ex}")
+
+
+# -------------------------------------- Capsize Simulator
+with tab_capsize:
+    st.subheader("⚡ Capsize Simulator — nonlinear time-domain roll dynamics")
+    st.caption(
+        "Solves  **I · φ̈ + b · φ̇ + Δ·g · GZ(φ) = M_wave(t)**  using your "
+        "polygon-clip GZ curve as the restoring-moment term. "
+        "Watch the ship oscillate, decay, or capsize in real time."
+    )
+
+    cL, cR = st.columns([1, 1])
+    with cL:
+        phi0 = st.slider("Initial heel φ₀ (°)", -70.0, 70.0, 25.0, 1.0,
+                          help="Release angle. Try >|AVS| to force a capsize.")
+        phi_dot0 = st.slider("Initial angular rate φ̇₀ (°/s)",
+                              -30.0, 30.0, 0.0, 0.5)
+        duration = st.slider("Simulation duration (s)", 10.0, 300.0, 90.0, 5.0)
+        C_roll   = st.slider("k_xx / B  (roll radius of gyration)",
+                              0.25, 0.50, 0.35, 0.01,
+                              help="Tupper §5.3: 0.33 fine, 0.35 displacement, 0.40 full.")
+        zeta = st.slider("Damping ratio ζ", 0.00, 0.30, 0.05, 0.01,
+                          help="0.03–0.05 typical; higher ζ = quicker decay.")
+
+    with cR:
+        mode = st.radio("Wave excitation",
+                         ["calm (free decay)", "beam (sinusoidal)", "rogue (Gaussian pulse)"],
+                         index=0)
+        mode_key = mode.split()[0]
+        wave_amp_MNm = st.number_input(
+            "Wave moment amplitude (MN·m)",
+            0.0, 2000.0, 0.0 if mode_key == "calm" else 80.0, 5.0,
+            help="1 MN·m = 10⁶ N·m. Scale with Δ·g·GZ_max for realistic beam-sea moments."
+        )
+        wave_period = st.number_input(
+            "Wave encounter period (s)", 3.0, 25.0,
+            max(3.0, s.get("roll_period_s", 10.0)), 0.5,
+            help="Resonance hits at Tₑ = Tφ = 2π/ωₙ."
+        )
+        avs_override = st.checkbox(
+            "Override AVS from GZ curve", value=False,
+            help="By default capsize threshold taken from solver AVS."
+        )
+        avs_val = st.number_input("AVS (°) if override", 10.0, 90.0, 60.0, 1.0) \
+                   if avs_override else None
+
+    run_sim = st.button("🚀 Run capsize simulation", type="primary")
+
+    if run_sim:
+        from hydro.seakeeping import simulate_roll
+        from hydro import plots3d
+        import plotly.graph_objects as go
+
+        with st.spinner("Integrating nonlinear roll ODE …"):
+            result = simulate_roll(
+                gz_angles_deg  = ang_t,
+                gz_values_m    = gz_t,
+                displacement_t = s["displacement_t"],
+                B_m            = hull.B_max,
+                GM_m           = s["GM_m"],
+                phi0_deg       = phi0,
+                phi_dot0_degps = phi_dot0,
+                duration_s     = duration,
+                mode           = mode_key,
+                wave_amp_Nm    = wave_amp_MNm * 1.0e6,
+                wave_period_s  = wave_period,
+                C_roll         = C_roll,
+                zeta           = zeta,
+                avs_deg        = avs_val,
+                n_points       = max(400, int(duration * 8)),
+            )
+
+        # Verdict strip
+        vL, v1, v2, v3, v4 = st.columns([1.2, 1, 1, 1, 1])
+        if result.capsized:
+            vL.markdown(
+                f"<div class='stat-card' style='background:#fde4e2;border-left-color:#d33;'>"
+                f"<b style='font-size:1.5rem;color:#8a1912;'>💀 CAPSIZED</b><br>"
+                f"<small>at t = {result.capsize_time_s:.1f} s</small></div>",
+                unsafe_allow_html=True)
+        else:
+            vL.markdown(
+                f"<div class='stat-card' style='background:#e4f7e6;border-left-color:#146c2e;'>"
+                f"<b style='font-size:1.5rem;color:#146c2e;'>✅ SURVIVED</b><br>"
+                f"<small>oscillating / decaying</small></div>",
+                unsafe_allow_html=True)
+        v1.metric("Max heel",      f"{result.max_heel_deg:.1f}°")
+        v2.metric("Natural Tφ",    f"{result.period_s:.2f} s")
+        v3.metric("Damping ζ",     f"{result.zeta:.3f}")
+        v4.metric("AVS used",      f"{result.avs_used_deg:.1f}°")
+
+        # φ(t) time history
+        phi_deg_t = np.degrees(result.phi)
+        fig_t = go.Figure()
+        fig_t.add_trace(go.Scatter(
+            x=result.t, y=phi_deg_t, mode='lines',
+            line=dict(color='#1f6aa5', width=2),
+            name="φ(t)",
+        ))
+        avs_line = result.avs_used_deg
+        fig_t.add_hrect(y0=avs_line,  y1=90,
+                        fillcolor='rgba(211,51,51,0.15)', line_width=0,
+                        annotation_text="capsize zone (+)",
+                        annotation_position="top right")
+        fig_t.add_hrect(y0=-90, y1=-avs_line,
+                        fillcolor='rgba(211,51,51,0.15)', line_width=0,
+                        annotation_text="capsize zone (−)",
+                        annotation_position="bottom right")
+        fig_t.add_hline(y=0, line=dict(color='grey', dash='dot', width=1))
+        if result.capsized and np.isfinite(result.capsize_time_s):
+            fig_t.add_vline(x=result.capsize_time_s,
+                             line=dict(color='red', dash='dash', width=2),
+                             annotation_text=f"capsize @ {result.capsize_time_s:.1f}s")
+        fig_t.update_layout(
+            title="Roll angle φ(t) – time history",
+            xaxis_title="t (s)", yaxis_title="φ (°)",
+            height=360, template="plotly_white",
+            yaxis=dict(range=[-max(90, result.max_heel_deg * 1.2),
+                                max(90, result.max_heel_deg * 1.2)]),
+        )
+        st.plotly_chart(fig_t, use_container_width=True)
+
+        # Two side-by-side: phase portrait + wave moment
+        pcL, pcR = st.columns(2)
+        with pcL:
+            fig_p = go.Figure()
+            fig_p.add_trace(go.Scatter(
+                x=phi_deg_t, y=np.degrees(result.phi_dot),
+                mode='lines', line=dict(color='#d33', width=1.5),
+                name='trajectory',
+            ))
+            fig_p.add_trace(go.Scatter(
+                x=[phi_deg_t[0]], y=[np.degrees(result.phi_dot[0])],
+                mode='markers', marker=dict(size=12, color='green', symbol='circle'),
+                name='start',
+            ))
+            fig_p.add_trace(go.Scatter(
+                x=[phi_deg_t[-1]], y=[np.degrees(result.phi_dot[-1])],
+                mode='markers', marker=dict(size=12, color='black', symbol='x'),
+                name='end',
+            ))
+            fig_p.update_layout(
+                title="Phase portrait  φ̇  vs  φ",
+                xaxis_title="φ (°)", yaxis_title="φ̇ (°/s)",
+                height=340, template="plotly_white",
+            )
+            st.plotly_chart(fig_p, use_container_width=True)
+        with pcR:
+            fig_m = go.Figure()
+            fig_m.add_trace(go.Scatter(
+                x=result.t, y=result.M_wave / 1e6, mode='lines',
+                line=dict(color='#7b3ca3', width=1.5),
+                name="M_wave(t)",
+            ))
+            fig_m.update_layout(
+                title="External wave moment (MN·m)",
+                xaxis_title="t (s)", yaxis_title="M (MN·m)",
+                height=340, template="plotly_white",
+            )
+            st.plotly_chart(fig_m, use_container_width=True)
+
+        # 3-D rolling animation
+        st.subheader("🌊 Live 3-D hull rolling in the earth frame")
+        st.caption(
+            "Press **▶ Play** — the ship rotates about its longitudinal axis "
+            "exactly as solved by the ODE above.  Waterplane stays flat."
+        )
+        try:
+            fig3d_anim = plots3d.hull_3d_rolling_animation(
+                hull, draft=draft,
+                phi_deg_t=np.degrees(result.phi),
+                t_s=result.t,
+                n_frames=60,
+                title=hull.name,
+            )
+            st.plotly_chart(fig3d_anim, use_container_width=True)
+        except Exception as ex:
+            st.error(f"3-D animation failed: {ex}")
+
+        with st.expander("Diagnostic – physics parameters used"):
+            st.write({
+                "mass_kg":       f"{result.mass_kg:,.0f}",
+                "I_xx (kg·m²)":  f"{result.I_xx:,.0f}",
+                "ω_n (rad/s)":   f"{result.omega_n:.4f}",
+                "T_φ  (s)":      f"{result.period_s:.2f}",
+                "ζ":             f"{result.zeta:.3f}",
+                "AVS (°)":       f"{result.avs_used_deg:.2f}",
+                "mode":          result.mode,
+                "capsized":      result.capsized,
+                "capsize_time":  result.capsize_time_s,
+                "max_|φ|":       f"{result.max_heel_deg:.2f}°",
+            })
 
 
 # -------------------------------------- Trim / FS / Weather
