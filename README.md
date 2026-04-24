@@ -41,25 +41,200 @@ commercial naval-architecture software (NAPA, GHS, Maxsurf).
 
 ---
 
-## 2. Quickstart
+## 2. How to run
+
+### 2.0 One-command scripts
+
+Convenience launchers live in `scripts/` — `.bat` for Windows cmd / PowerShell, `.sh` for Linux / macOS / Git Bash. Each one activates `.venv` automatically.
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup`        | Create `.venv`, install deps, regenerate all sample hulls |
+| `scripts/run_tests`    | `pytest` + verbose benchmark script |
+| `scripts/run_demo`     | CLI analysis of box barge + Wigley + KCS → artefacts in `output/` |
+| `scripts/run_capsize`  | Headless KCS capsize-simulator demo (3 scenarios) |
+| `scripts/run_streamlit`| Launch the web UI on `http://localhost:8501` |
+| `scripts/run_all`      | Full pipeline: setup → tests → demo → capsize |
+
+First-time Windows user:
+
+```cmd
+scripts\setup.bat
+scripts\run_tests.bat
+scripts\run_streamlit.bat
+```
+
+First-time Linux / macOS user:
 
 ```bash
-# 1. Install
-python -m pip install -r requirements.txt
+bash scripts/setup.sh
+bash scripts/run_tests.sh
+bash scripts/run_streamlit.sh
+```
 
-# 2. Generate sample offset files (box barge + Wigley hull)
+### 2.1 Prerequisites
+
+- **Python 3.11 or 3.12** (tested on both in CI; 3.10 also works but is not covered by the test matrix).
+- `pip` ≥ 23, plus a working C build chain for `shapely` wheels on Windows — every officially supported platform already ships a prebuilt wheel, so a plain `pip install` is normally all that is needed.
+- ~200 MB of free disk for the virtual environment and the optional PDF / HTML artefacts.
+
+Check versions:
+
+```bash
+python --version       # → 3.11.x or 3.12.x
+python -m pip --version
+```
+
+### 2.2 Clone and install
+
+```bash
+# Clone
+git clone https://github.com/Kavin-Charles/Hydronix.git
+cd Hydronix
+
+# Create an isolated virtual environment (recommended)
+python -m venv .venv
+
+# Activate it
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# Windows cmd:
+.venv\Scripts\activate.bat
+# Linux / macOS:
+source .venv/bin/activate
+
+# Install all runtime + test dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Core runtime packages pulled in: `numpy`, `scipy`, `shapely`, `pandas`, `matplotlib`, `plotly`, `reportlab`, `streamlit`, `openpyxl`.
+
+### 2.3 Generate sample hulls
+
+The repository ships with scripts that regenerate every offset file on demand (no large binaries tracked in git):
+
+```bash
+# Box barge (60 × 12 × 6) + Wigley parabolic hull
 python samples/generate_samples.py
 
-# 3. Run the validation suite — confirms the solver matches closed-form
-#    answers to within ≤ 0.2 %
+# KCS containership parametric synthesis (Lpp = 230 m)
+python samples/build_kcs.py
+```
+
+Resulting files land in `samples/`:
+
+- `samples/box_barge.json`
+- `samples/wigley.json`
+- `samples/kcs_real.json`
+
+### 2.4 Run the validation suite
+
+Confirm the solver matches analytical references to < 0.5 %:
+
+```bash
+python -m pytest tests/ -v
+# or run the benchmark script directly
 python tests/test_benchmarks.py
+```
 
-# 4. CLI: full analysis of the box barge, including IMO check and plots
-python main.py samples/box_barge.json --imo --angles "0:60:10"
+Expected output: **8/8 PASS**, box barge exact to machine epsilon, Wigley within 0.2 %, KCS within 3 % on Cm and 5 % on LCB.
 
-# 5. Launch the interactive Streamlit UI
+### 2.5 Command-line analysis
+
+Full analysis of the box barge with IMO check and GZ sweep:
+
+```bash
+python main.py samples/box_barge.json --imo --angles "0:60:5" --table
+```
+
+Real containership, save JSON results and generate a PDF report:
+
+```bash
+python main.py samples/kcs_real.json \
+    --draft 10.8 --KG 13.5 --rho 1.025 \
+    --angles "0:60:5" --imo --weather \
+    --save output/kcs_results.json \
+    --report output/kcs_report.pdf
+```
+
+Headless run (no matplotlib windows — suitable for CI):
+
+```bash
+python main.py samples/wigley.json --imo --no-plot \
+    --save output/wigley.json
+```
+
+### 2.6 Launch the Streamlit web UI
+
+```bash
 streamlit run app.py
 ```
+
+Streamlit prints a local URL (default `http://localhost:8501`). Open it in a browser. Workflow:
+
+1. **Sidebar → Load offset file:** pick one of `samples/box_barge.json`, `samples/wigley.json`, `samples/kcs_real.json`, or upload your own JSON / CSV / XLSX.
+2. **Set loading condition:** draft `T`, vertical centre of gravity `KG`, water density `ρ`.
+3. **Heel sweep:** choose angle range (e.g. `0:60:5`).
+4. Tabs:
+   - **Overview** — hull particulars, form coefficients, roll period.
+   - **Hydrostatics** — full draft-vs-particulars table with CSV download.
+   - **GZ / KN** — true-heeled + wall-sided curves, KN cross-curves, CSV download.
+   - **IMO** — per-criterion PASS / FAIL with margins.
+   - **Curves** — Bonjean, hydrostatic curves.
+   - **3D Hull** — interactive Plotly mesh with waterplane.
+   - **⚡ Capsize Sim** — time-domain nonlinear roll with animated rollover.
+   - **Trim / FS / Weather** — equilibrium trim solver, free-surface correction, IMO severe-wind criterion.
+   - **Export** — PDF report + JSON dump download.
+
+### 2.7 Running the capsize simulator from Python
+
+```python
+from hydro.io_formats import load
+from hydro.hydrostatics import Hydrostatics
+from hydro.heeled import gz_curve_true
+from hydro.seakeeping import simulate_roll
+
+hull  = load("samples/kcs_real.json")
+hydro = Hydrostatics(hull, draft=10.8, KG=13.5, rho=1.025)
+ang, gz, _ = gz_curve_true(hull, draft=10.8, KG=13.5,
+                           angles_deg=list(range(0, 61, 5)))
+
+r = simulate_roll(
+    gz_angles_deg = ang,
+    gz_values_m   = gz,
+    displacement_t= hydro.displacement_t,
+    B_m           = hull.B_max,
+    GM_m          = hydro.GM,
+    phi0_deg      = 25,
+    duration_s    = 90,
+    mode          = "rogue",
+    wave_amp_Nm   = 2.0e8,
+)
+print(f"capsized = {r.capsized},  max heel = {r.max_heel_deg:.1f}°,  "
+      f"t_cap = {r.capsize_time_s:.1f} s,  Tφ = {r.period_s:.1f} s")
+```
+
+### 2.8 Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `ModuleNotFoundError: shapely` | `pip install shapely>=2.0` (Windows prebuilt wheels need Python 3.11+) |
+| `UnicodeEncodeError` in Windows `cmd` | Run `chcp 65001` once, or use PowerShell / Windows Terminal |
+| Streamlit port already in use | `streamlit run app.py --server.port 8502` |
+| Plotly 3-D animation stutters | Lower `n_frames` to 30 in the Capsize Sim tab |
+| `brentq: f(a) and f(b) must have different signs` in `build_kcs.py` | Target Cp outside the \[0.55, 0.85\] practical range — edit `CB_PUB` |
+| PDF report empty / missing fonts | `pip install --upgrade reportlab`; rerun with `--report output/foo.pdf` |
+
+### 2.9 One-liner smoke test
+
+```bash
+python -c "from hydro import Hull, Hydrostatics, simulate_roll; \
+from hydro.io_formats import load; h=load('samples/box_barge.json'); \
+print(Hydrostatics(h, draft=3.0, KG=3.0).summary())"
+```
+
+If this prints a populated dict including `displacement_volume_m3 ≈ 2160.0`, the install is healthy.
 
 ### CLI flags
 
