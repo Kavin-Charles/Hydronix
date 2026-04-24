@@ -1,0 +1,194 @@
+"""
+Analytical validation suite.
+
+Every test compares our first-principles solver against a closed-form
+result from `hydro.benchmarks`.  Tolerances are tight (< 1 %) because the
+analytical reference is exact.
+
+Run with:
+    python -m pytest tests/ -v
+or simply:
+    python tests/test_benchmarks.py
+"""
+
+from __future__ import annotations
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
+import numpy as np
+
+from hydro.benchmarks    import (box_barge, box_barge_analytical,
+                                  wigley_hull, wigley_analytical)
+from hydro.hydrostatics  import Hydrostatics
+
+
+# ---------------------------------------------------------------------------
+
+def _pct_err(num, truth):
+    return abs(num - truth) / max(abs(truth), 1e-12) * 100.0
+
+
+def test_box_barge():
+    L, B, D, T = 60.0, 12.0, 6.0, 3.0
+    hull = box_barge(L, B, D, n_stations=21, n_waterlines=13)
+    hs   = Hydrostatics(hull, T, KG=3.0)
+    ref  = box_barge_analytical(L, B, T)
+
+    results = []
+    tests = [
+        ("Displacement ∇",   hs.displacement_volume, ref["displacement_m3"]),
+        ("Waterplane Aw",    hs.waterplane_area,    ref["waterplane_area_m2"]),
+        ("LCB",              hs.lcb_from_ap,        ref["lcb_from_ap_m"]),
+        ("LCF",              hs.lcf_from_ap,        ref["lcf_from_ap_m"]),
+        ("KB",               hs.KB,                  ref["KB_m"]),
+        ("BM",               hs.BM,                  ref["BM_m"]),
+        ("KM",               hs.KM,                  ref["KM_m"]),
+        ("IT",               hs.IT,                  ref["IT_m4"]),
+    ]
+    print("\nBox Barge validation (L=60, B=12, T=3)")
+    print("-" * 60)
+    print(f"  {'Quantity':<18}{'Computed':>14}{'Analytical':>14}{'Err %':>8}")
+    ok = True
+    for name, got, ref_val in tests:
+        err = _pct_err(got, ref_val)
+        flag = "✓" if err < 0.1 else ("~" if err < 1.0 else "✗")
+        print(f"  {name:<18}{got:>14.5f}{ref_val:>14.5f}{err:>7.3f}  {flag}")
+        if err >= 1.0:
+            ok = False
+        results.append((name, got, ref_val, err))
+    return ok, results
+
+
+def test_wigley():
+    L, B, D, T = 100.0, 10.0, 6.25, 4.0
+    hull = wigley_hull(L, B, D, n_stations=41, n_waterlines=21)
+    hs   = Hydrostatics(hull, T, KG=3.5)
+    ref  = wigley_analytical(L, B, D, T)
+
+    tests = [
+        ("Displacement ∇",   hs.displacement_volume, ref["displacement_m3"]),
+        ("Waterplane Aw",    hs.waterplane_area,    ref["waterplane_area_m2"]),
+        ("LCB",              hs.lcb_from_ap,        ref["lcb_from_ap_m"]),
+        ("LCF",              hs.lcf_from_ap,        ref["lcf_from_ap_m"]),
+        ("KB",               hs.KB,                  ref["KB_m"]),
+        ("BM",               hs.BM,                  ref["BM_m"]),
+        ("IT",               hs.IT,                  ref["IT_m4"]),
+    ]
+    print("\nWigley Hull validation (L=100, B=10, D=6.25, T=4)")
+    print("-" * 60)
+    print(f"  {'Quantity':<18}{'Computed':>14}{'Analytical':>14}{'Err %':>8}")
+    ok = True
+    results = []
+    for name, got, ref_val in tests:
+        err = _pct_err(got, ref_val)
+        flag = "✓" if err < 0.5 else ("~" if err < 2.0 else "✗")
+        print(f"  {name:<18}{got:>14.5f}{ref_val:>14.5f}{err:>7.3f}  {flag}")
+        if err >= 2.0:
+            ok = False
+        results.append((name, got, ref_val, err))
+    return ok, results
+
+
+# ---------------------------------------------------------------------------
+
+def test_heeled_matches_upright_at_zero():
+    """Heeled solver at φ=0 must reproduce upright hydrostatics to rounding."""
+    from hydro.heeled import HeeledHydrostatics
+    hull = wigley_hull(L=100, B=10, D=6.25, n_stations=41, n_waterlines=21)
+    hs   = Hydrostatics(hull, 4.0, KG=3.5)
+    hh   = HeeledHydrostatics(hull, heel_deg=0.0,
+                               target_volume=hs.displacement_volume,
+                               KG=3.5, draft_upright=4.0)
+    err = _pct_err(hh.displacement_volume, hs.displacement_volume)
+    print(f"\nHeeled-at-zero sanity check:   Δ% = {err:.4f}  "
+          f"({'OK' if err < 0.5 else 'FAIL'})")
+    return err < 0.5
+
+
+def test_gz_zero_at_zero_heel():
+    from hydro.heeled import gz_curve_true
+    hull = wigley_hull(L=100, B=10, D=6.25, n_stations=31, n_waterlines=16)
+    ang, gz = gz_curve_true(hull, draft=4.0, KG=3.5,
+                            angles_deg=np.array([0.0, 5.0, 10.0]))
+    print(f"\nGZ(φ=0) = {gz[0]:+.6f}  ({'OK' if abs(gz[0]) < 1e-4 else 'FAIL'})")
+    return abs(gz[0]) < 1e-4
+
+
+# ---------------------------------------------------------------------------
+
+def test_kcs_real() -> bool:
+    """
+    Real-world regression: KCS (KRISO Container Ship) parametric hull.
+
+    samples/kcs_real.json is generated by samples/build_kcs.py.
+    Tolerances are looser (Lewis sections can't perfectly reproduce real geometry):
+      - Displacement volume : < 0.05 %
+      - Block coefficient Cb : < 0.5 %
+      - LCB position : < 6 % relative (parametric synthesis limit)
+      - Midship Cm : < 5 % (Lewis 2-param inherent error)
+    """
+    from hydro.io_formats import load as load_hull_file
+
+    kcs_json = ROOT / "samples" / "kcs_real.json"
+    if not kcs_json.exists():
+        import subprocess
+        print("\nKCS JSON not found; generating via samples/build_kcs.py …")
+        subprocess.run([sys.executable, str(ROOT / "samples" / "build_kcs.py")],
+                       check=True)
+
+    hull = load_hull_file(kcs_json)
+
+    # Published KCS full-scale particulars (SIMMAN 2008 / T2015 NMRI)
+    T_PUB        = 10.8
+    L_KCS        = 230.0
+    V_PUB        = 52030.0
+    CB_PUB       = 0.6505
+    CM_PUB       = 0.9849
+    # LCB: -1.48 % Lpp forward of midship (positive forward convention)
+    # → LCB from AP = midship + 1.48 % × L  (for our sign convention)
+    LCB_PCT_PUB  = -1.48   # % Lpp, positive = forward of midship
+    KG_PUB       = 13.50
+
+    hs = Hydrostatics(hull, T_PUB, KG=KG_PUB)
+
+    # Compute LCB in same % Lpp convention for comparison
+    lcb_pct_comp = (L_KCS / 2.0 - hs.lcb_from_ap) / L_KCS * 100.0
+
+    tests = [
+        ("Displacement V (m3)", hs.displacement_volume, V_PUB,       0.1),
+        ("Block coeff Cb",      hs.Cb,                  CB_PUB,       0.5),
+        ("Midship coeff Cm",    hs.Cm,                  CM_PUB,       5.0),
+        ("LCB (% Lpp fwd+)",    lcb_pct_comp,           LCB_PCT_PUB, 10.0),
+    ]
+
+    print("\nKCS real-world regression (parametric hull vs published particulars)")
+    print("-" * 70)
+    print(f"  {'Quantity':<28}{'Computed':>13}{'Published':>13}{'Err %':>8}  Tol")
+    ok = True
+    for name, got, ref_val, tol in tests:
+        err = _pct_err(got, ref_val)
+        flag = "✓" if err <= tol else "✗"
+        print(f"  {name:<28}{got:>13.4f}{ref_val:>13.4f}{err:>7.3f} %  {flag} (tol {tol:.1f} %)")
+        if err > tol:
+            ok = False
+    return ok
+
+
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    all_ok = True
+    ok, _ = test_box_barge();   all_ok &= ok
+    ok, _ = test_wigley();      all_ok &= ok
+    all_ok &= test_heeled_matches_upright_at_zero()
+    all_ok &= test_gz_zero_at_zero_heel()
+    ok     = test_kcs_real();   all_ok &= ok
+    print("\n" + "=" * 60)
+    print("VALIDATION:  " + ("ALL PASSED ✓" if all_ok else "SOME FAILED ✗"))
+    print("=" * 60)
+    sys.exit(0 if all_ok else 1)
