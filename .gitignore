@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -32,10 +33,15 @@ wheels/
 
 # Project
 output/
+submission/
 samples/*.json
 samples/*.csv
+!samples/hackathon_ps_hull.json
 .streamlit/
 .claude/
+
+# Hackathon source material (large binary, not source code)
+*.xlsx
 
 # OS
 .DS_Store

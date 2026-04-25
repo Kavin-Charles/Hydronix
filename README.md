@@ -1,6 +1,7 @@
-# ⚓ HydroHackathon — First-Principles Ship Hydrostatics & Stability
+# ⚓ Hydronix — First-Principles Ship Hydrostatics & Stability
 
-> **Wavez 2026 · IIT Madras Ocean Engineering · Silver Voyage Hydrohackathon (Phase 1)**
+> **Authors:** Kavin Charles · Jeevika R
+> **Event:** Wavez 2026 · IIT Madras
 
 A complete ship-hydrostatics engine built from the ground up: reads a ship
 offset table in JSON/CSV/Excel, returns every quantity required by the
@@ -564,8 +565,10 @@ print(r.capsized, r.max_heel_deg, r.capsize_time_s)
 
 ## 10. Credits
 
-Built for the HydroHackathon 2026 challenge. All formulae cross-checked
-against:
+**Authors:** Kavin Charles · Jeevika R
+**Event:** Wavez 2026 · IIT Madras
+
+All formulae cross-checked against:
 
 - Tupper, *Introduction to Naval Architecture* (5 th ed.)
 - Biran & López-Pulido, *Ship Hydrostatics and Stability* (2 nd ed.)

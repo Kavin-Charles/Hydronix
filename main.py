@@ -1,6 +1,8 @@
 """
-HydroHackathon – Command-Line Interface
-========================================
+Hydronix – Command-Line Interface
+==================================
+Authors : Kavin Charles · Jeevika R
+Event   : Wavez 2026 · IIT Madras
 
 Usage examples
 --------------
@@ -156,7 +158,8 @@ def print_hydrostatic_table(tab):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="HydroHackathon – first-principles ship hydrostatics & stability",
+        description="Hydronix – first-principles ship hydrostatics & stability"
+                    " (Kavin Charles · Jeevika R, Wavez 2026)",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", nargs="?", default="samples/mv_sample_vessel.json",
                     help="JSON/CSV/XLSX offset file (default: samples/mv_sample_vessel.json)")
