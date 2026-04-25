@@ -58,6 +58,8 @@ def stability_parameters(
         * Righting-energy areas 0–30°, 0–40°, 30–40°  (m · rad)
         * Angle of vanishing stability (AVS) and range of positive stability
     """
+    angles_deg = np.asarray(angles_deg, dtype=float)
+    gz         = np.asarray(gz,         dtype=float)
     valid  = ~np.isnan(gz)
     ang    = angles_deg[valid]
     gz_v   = gz[valid]

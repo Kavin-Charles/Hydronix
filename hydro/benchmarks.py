@@ -87,6 +87,33 @@ def wigley_hull(L: float = 100.0,
     return Hull(stations, waterlines, half_br, name=name, rho=1.025)
 
 
+def hackathon_ps_hull(name: str = "Hackathon PS Container Hull") -> Hull:
+    """
+    Ultra-Large Container Vessel offset table from the official Wavez 2026
+    Hydrohackathon Problem-Statement file.
+
+        LOA = 420.95 m  ·  LBP ≈ 399.29 m
+        B   = 63 m
+        T   = 28.5 m  (design)
+        D   = 37.269 m
+        CB  = 0.78  (reported)
+
+    Stations: 23 irregular x-positions densified at bow/stern.
+    Waterlines: 11 levels (keel + A..K = 7.69 % – 130.77 % of T).
+    """
+    from .io_formats import load as _load
+    from pathlib import Path
+    here = Path(__file__).resolve().parent.parent / "samples" / "hackathon_ps_hull.json"
+    if not here.exists():
+        raise FileNotFoundError(
+            f"PS hull sample not found at {here}. "
+            "Run scripts/build_ps_hull.py to regenerate from the .xlsx."
+        )
+    h = _load(here)
+    return Hull(h.stations, h.waterlines, h.half_breadths,
+                name=name, rho=h.rho)
+
+
 def wigley_analytical(L: float, B: float, D: float, T: float,
                       rho: float = 1.025) -> dict:
     """

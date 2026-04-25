@@ -234,6 +234,7 @@ def gz_curve_true(
     """
     if angles_deg is None:
         angles_deg = np.arange(0.0, 81.0, 5.0)
+    angles_deg = np.asarray(angles_deg, dtype=float)
 
     base = Hydrostatics(hull, draft, KG)
     V0   = base.displacement_volume

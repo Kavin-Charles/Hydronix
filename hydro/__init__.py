@@ -1,5 +1,8 @@
 """
-HydroHackathon – First-principles ship hydrostatics & stability.
+Hydronix – First-principles ship hydrostatics & stability.
+
+Authors : Kavin Charles · Jeevika R
+Event   : Wavez 2026 · IIT Madras
 
 Modules
 -------
