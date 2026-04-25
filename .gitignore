@@ -43,6 +43,9 @@ samples/*.csv
 # Hackathon source material (large binary, not source code)
 *.xlsx
 
+# Submission build script
+scripts/build_submission.py
+
 # OS
 .DS_Store
 Thumbs.db
