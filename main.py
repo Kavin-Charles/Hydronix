@@ -1,5 +1,5 @@
 """
-Hydronix – Command-Line Interface
+Hydronix – Command Line Interface
 ==================================
 Authors : Kavin Charles · Jeevika R
 Event   : Wavez 2026 · IIT Madras
