@@ -1,7 +1,6 @@
 """
 Build a KCS-like container-ship offset table from published main particulars
 and export it as a JSON file that our solver can consume.
-
 KCS — KRISO Container Ship (Korea Research Institute for Ships & Ocean
 Engineering) — is the international CFD-validation benchmark for a modern
 container ship with bulbous bow and stern.  Published full-scale particulars
