@@ -1,4 +1,4 @@
-#  Hydronix — First-Principles Ship Hydrostatics & Stability
+#  Hydronix —  First-Principles Ship Hydrostatics & Stability
 
 > **Authors:** Kavin Charles · Jeevika R
 > **Event:** Wavez 2026 · IIT Madras
